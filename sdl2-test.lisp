@@ -36,30 +36,32 @@
       (dolist (shader shaders)
         (gl:delete-shader shader)))))
 
-(defun bind-vertex-attribs (program struct slot-vars)
+(defun bind-vertex-attribs (program struct &optional slot-vars)
   "Helper for binding VAO vertex attributes. `struct' is a cffi struct, usually
 defined with cffi:defstruct and named as `(:struct struct-name). `slot-vars' is
-a list of `(slot var)' cons cells where `slot' is the symbol naming the slot in
-the struct and `var' is the string name of the variable in the program."
-  (dolist (slot-var slot-vars)
-    (destructuring-bind (slot var) slot-var
-      (let ((location (gl:get-attrib-location program var)))
-        (when (< -1 location)
-          (gl:vertex-attrib-pointer location
-                                    (cffi:foreign-slot-count struct slot)
-                                    (cffi:foreign-slot-type struct slot)
-                                    nil
-                                    (cffi:foreign-type-size struct)
-                                    (cffi:foreign-slot-offset struct slot))
-          (gl:enable-vertex-attrib-array location))))))
+either a list of slot symbols or a list of `(slot var)' cons cells where `slot'
+is the symbol naming the slot in the struct and `var' is the string name of the
+variable in the program."
+  (dolist (spec (or slot-vars (cffi:foreign-slot-names struct)))
+    (let* ((slot (if (listp spec) (car spec) spec))
+           (var (if (listp spec) (cdr spec) (format nil "~(~a~)" spec)))
+           (location (gl:get-attrib-location program var)))
+      (when (< -1 location)
+        (gl:vertex-attrib-pointer location
+                                  (cffi:foreign-slot-count struct slot)
+                                  (cffi:foreign-slot-type struct slot)
+                                  nil
+                                  (cffi:foreign-type-size struct)
+                                  (cffi:foreign-slot-offset struct slot))
+        (gl:enable-vertex-attrib-array location)))))
 
 (defmacro with-cstruct-slots ((vars ptr type) &body body)
-  "Create local symbol macros for each var in VARS to reference
-foreign slots in PTR of TYPE. Similar to WITH-SLOTS.
-Each var can be of the form: slot-name - in which case slot-name will
-be bound to the value of the slot or: (:pointer slot-name) - in which
-case slot-name will be bound to the pointer to that slot. This is like
-cffi:with-foreign-slots except it calculates slot offsets at compile time."
+  "Create local symbol macros for each var in VARS to reference foreign slots in
+PTR of TYPE. Similar to WITH-SLOTS.  Each var can be of the form: slot-name - in
+which case slot-name will be bound to the value of the slot or: (:pointer
+slot-name) - in which case slot-name will be bound to the pointer to that
+slot. This is like cffi:with-foreign-slots except it calculates slot offsets at
+compile time."
   (let ((ptr-var (gensym "PTR")))
     `(let ((,ptr-var ,ptr))
        (symbol-macrolet
@@ -110,9 +112,7 @@ cffi:with-foreign-slots except it calculates slot offsets at compile time."
   (gl:bind-vertex-array *vao*)
   (setf *vbo* (car (gl:gen-buffers 1)))
   (gl:bind-buffer :array-buffer *vbo*)
-  (bind-vertex-attribs *program*
-                       '(:struct sprite)
-                       '((pos "pos") (cell "cell") (size "size")))
+  (bind-vertex-attribs *program* '(:struct sprite))
 
   ;; initialize empty buffer data store, map buffer
   (%gl:buffer-data :array-buffer
